@@ -139,14 +139,12 @@
     <script>
         let tabs = [];
         let activeTabId = null;
+        let isWorkerReady = false;
 
         const tabsList = document.getElementById('tabsList');
         const contentContainer = document.getElementById('contentContainer');
         const urlInput = document.getElementById('urlInput');
         const loadBar = document.getElementById('loadBar');
-
-        // 初期状態で新規タブ（Home）を作成
-        createNewTab("");
 
         function createNewTab(url = "") {
             const id = Date.now();
@@ -160,7 +158,6 @@
             renderTabs();
             switchTab(id);
 
-            // URLがあれば移動、なければhome.htmlを表示
             if (url) {
                 urlInput.value = url;
                 navigate();
@@ -195,7 +192,8 @@
             urlInput.value = (currentTab.url === "" || currentTab.url === "home.html") ? "" : currentTab.url;
             
             document.querySelectorAll('iframe').forEach(f => f.classList.remove('active'));
-            document.getElementById(`frame-${id}`).classList.add('active');
+            const targetFrame = document.getElementById(`frame-${id}`);
+            if (targetFrame) targetFrame.classList.add('active');
             renderTabs();
         }
 
@@ -209,7 +207,12 @@
             else renderTabs();
         }
 
-        function navigate() {
+        async function navigate() {
+            if (!isWorkerReady) {
+                showToast("プロキシを起動中です...数秒お待ちください");
+                return;
+            }
+
             let input = urlInput.value.trim();
             const tab = tabs.find(t => t.id === activeTabId);
             const frame = document.getElementById(`frame-${activeTabId}`);
@@ -222,7 +225,6 @@
                 return;
             }
 
-            // URL判定と検索エンジンの使い分け
             let url = input;
             if (!/^https?:\/\//i.test(url)) {
                 if (url.includes('.') && !url.includes(' ')) {
@@ -236,9 +238,11 @@
             loadBar.style.width = "40%";
 
             try {
-                // プレフィックスを付けてエンコードされたURLへ
+                // 絶対パスでリクエストを投げることで、確実にSWのスコープ内に入れる
                 const encoded = __scramjet$config.encodeUrl(url);
-                frame.src = __scramjet$config.prefix + encoded;
+                const finalPath = location.origin + __scramjet$config.prefix + encoded;
+                
+                frame.src = finalPath;
                 
                 frame.onload = () => {
                     try {
@@ -252,7 +256,7 @@
                     renderTabs();
                 };
             } catch (e) {
-                showToast("URLの処理に失敗しました");
+                showToast("接続エラーが発生しました");
                 loadBar.style.width = "0%";
             }
         }
@@ -266,17 +270,38 @@
 
         urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') navigate(); });
 
+        // Service Worker の登録管理
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./scramjet.sw.js', { 
-                    scope: __scramjet$config.prefix,
-                    updateViaCache: 'none' 
-                }).then(reg => {
-                    console.log('Proxy Worker Registered');
+            window.addEventListener('load', async () => {
+                try {
+                    const reg = await navigator.serviceWorker.register('./scramjet.sw.js', { 
+                        scope: __scramjet$config.prefix,
+                        updateViaCache: 'none' 
+                    });
+                    
+                    // SWがActiveになるのを待つ
+                    const checkWorker = () => {
+                        if (navigator.serviceWorker.controller) {
+                            console.log('Proxy Worker Ready');
+                            isWorkerReady = true;
+                            // SW準備完了後に初期タブを作成
+                            if (tabs.length === 0) createNewTab("");
+                        } else {
+                            setTimeout(checkWorker, 100);
+                        }
+                    };
+                    checkWorker();
                     reg.update();
-                }).catch(err => console.error('SW Error:', err));
+                } catch (err) {
+                    console.error('SW Error:', err);
+                    showToast("プロキシの初期化に失敗しました");
+                }
             });
+        } else {
+            showToast("お使いのブラウザは対応していません");
         }
+
+        // 初期タブの作成をSW確認後に回すため、ここでは呼ばない
     </script>
 </body>
 </html>
