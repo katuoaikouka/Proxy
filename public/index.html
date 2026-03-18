@@ -166,7 +166,7 @@
                 navigate();
             } else {
                 iframe.src = "home.html";
-                iframe.onload = () => { tab.title = "Home"; renderTabs(); };
+                iframe.onload = () => { newTab.title = "Home"; renderTabs(); };
             }
         }
 
@@ -211,7 +211,6 @@
             const tab = tabs.find(t => t.id === activeTabId);
             const frame = document.getElementById(`frame-${activeTabId}`);
 
-            // 入力が空ならHomeに戻す
             if (!url) {
                 tab.url = "";
                 tab.title = "Home";
@@ -250,8 +249,17 @@
 
         urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') navigate(); });
 
+        // Service Worker の強力な登録・更新処理
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./scramjet.sw.js', { scope: '/scramjet/' });
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./scramjet.sw.js', { 
+                    scope: '/scramjet/',
+                    updateViaCache: 'none' 
+                }).then(reg => {
+                    console.log('SW Registered');
+                    reg.update(); // 常に最新をチェック
+                }).catch(err => console.error('SW Error:', err));
+            });
         }
     </script>
 </body>
