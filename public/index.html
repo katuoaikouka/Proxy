@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scramjet Multi-Tab Browser</title>
+    <style>
+        :root {
+            --bg-dark: #202124;
+            --toolbar-bg: #35363a;
+            --input-bg: #202124;
+            --accent-blue: #8ab4f8;
+            --text-main: #e8eaed;
+            --tab-inactive: #292a2d;
+            --error-red: #f28b82;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            display: flex; flex-direction: column;
+            height: 100vh; margin: 0;
+            background: var(--bg-dark); color: var(--text-main);
+            overflow: hidden;
+        }
+
+        /* --- Header & Tabs --- */
+        .browser-header {
+            background: var(--toolbar-bg);
+            padding: 8px 8px 0 8px;
+            display: flex; flex-direction: column;
+            z-index: 100;
+        }
+
+        .tabs-container {
+            display: flex; align-items: center; gap: 4px;
+            overflow-x: auto; scrollbar-width: none;
+        }
+        .tabs-container::-webkit-scrollbar { display: none; }
+
+        .tab {
+            background: var(--tab-inactive);
+            padding: 8px 16px; border-radius: 8px 8px 0 0;
+            font-size: 13px; min-width: 140px; max-width: 200px;
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: pointer; transition: 0.2s; position: relative;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab.active {
+            background: var(--bg-dark);
+            border-bottom: 2px solid var(--accent-blue);
+        }
+
+        .tab-title {
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-right: 8px; flex: 1;
+        }
+
+        .close-tab {
+            width: 18px; height: 18px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; transition: 0.2s;
+        }
+        .close-tab:hover { background: rgba(255,255,255,0.2); }
+
+        .add-tab-btn {
+            padding: 8px 12px; cursor: pointer; font-size: 18px;
+            color: var(--accent-blue);
+        }
+
+        /* --- Toolbar --- */
+        .toolbar {
+            background: var(--bg-dark);
+            display: flex; align-items: center;
+            gap: 12px; padding: 8px 12px;
+        }
+
+        .address-container {
+            flex: 1; position: relative;
+        }
+
+        input#urlInput {
+            width: 100%; padding: 8px 16px;
+            background: var(--toolbar-bg);
+            border: 1px solid transparent; border-radius: 20px;
+            color: var(--text-main); outline: none; font-size: 14px;
+        }
+        input#urlInput:focus { border-color: var(--accent-blue); }
+
+        .loading-bar {
+            height: 2px; width: 0%; background: var(--accent-blue);
+            position: absolute; bottom: -4px; left: 10px;
+            transition: width 0.3s ease; border-radius: 2px;
+        }
+
+        /* --- Stylish Alert Toast --- */
+        #toast {
+            position: fixed; bottom: 20px; right: -400px;
+            background: #323232; color: white;
+            padding: 16px 24px; border-radius: 8px;
+            display: flex; align-items: center; gap: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+            transition: right 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            border-left: 4px solid var(--error-red); z-index: 1000;
+        }
+        #toast.show { right: 20px; }
+
+        /* --- Content --- */
+        #contentContainer { flex: 1; background: white; border: none; }
+        iframe { width: 100%; height: 100%; border: none; display: none; }
+        iframe.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="toast">
+        <span style="color: var(--error-red); font-size: 20px;">✕</span>
+        <span id="toastMsg">エラーメッセージ</span>
+    </div>
+
+    <div class="browser-header">
+        <div class="tabs-container" id="tabsList">
+            <div class="add-tab-btn" onclick="createNewTab()">+</div>
+        </div>
+        
+        <div class="toolbar">
+            <div class="address-container">
+                <input type="text" id="urlInput" placeholder="検索またはURLを入力">
+                <div class="loading-bar" id="loadBar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="contentContainer"></div>
+
+    <script src="scramjet.code.js"></script>
+    <script src="scramjet.config.js"></script>
+
+    <script>
+        let tabs = [];
+        let activeTabId = null;
+
+        const tabsList = document.getElementById('tabsList');
+        const contentContainer = document.getElementById('contentContainer');
+        const urlInput = document.getElementById('urlInput');
+        const loadBar = document.getElementById('loadBar');
+
+        // 初期状態で新規タブ（Home）を作成
+        createNewTab("");
+
+        function createNewTab(url = "") {
+            const id = Date.now();
+            const newTab = { id, url, title: url ? "Loading..." : "Home" };
+            tabs.push(newTab);
+
+            const iframe = document.createElement('iframe');
+            iframe.id = `frame-${id}`;
+            contentContainer.appendChild(iframe);
+
+            renderTabs();
+            switchTab(id);
+
+            // URLがあれば移動、なければhome.htmlを表示
+            if (url) {
+                urlInput.value = url;
+                navigate();
+            } else {
+                iframe.src = "home.html";
+                iframe.onload = () => { tab.title = "Home"; renderTabs(); };
+            }
+        }
+
+        function renderTabs() {
+            const addBtn = document.querySelector('.add-tab-btn');
+            Array.from(tabsList.querySelectorAll('.tab')).forEach(t => t.remove());
+
+            tabs.forEach(tab => {
+                const tabEl = document.createElement('div');
+                tabEl.className = `tab ${tab.id === activeTabId ? 'active' : ''}`;
+                tabEl.onclick = () => switchTab(tab.id);
+                tabEl.innerHTML = `
+                    <span class="tab-title">${tab.title}</span>
+                    <span class="close-tab" onclick="closeTab(event, ${tab.id})">✕</span>
+                `;
+                tabsList.insertBefore(tabEl, addBtn);
+            });
+        }
+
+        function switchTab(id) {
+            activeTabId = id;
+            const currentTab = tabs.find(t => t.id === id);
+            urlInput.value = (currentTab.url === "" || currentTab.url === "home.html") ? "" : currentTab.url;
+            
+            document.querySelectorAll('iframe').forEach(f => f.classList.remove('active'));
+            document.getElementById(`frame-${id}`).classList.add('active');
+            renderTabs();
+        }
+
+        function closeTab(e, id) {
+            e.stopPropagation();
+            if (tabs.length === 1) return;
+            const index = tabs.findIndex(t => t.id === id);
+            tabs = tabs.filter(t => t.id !== id);
+            document.getElementById(`frame-${id}`).remove();
+            if (activeTabId === id) switchTab(tabs[Math.max(0, index - 1)].id);
+            else renderTabs();
+        }
+
+        function navigate() {
+            let url = urlInput.value.trim();
+            const tab = tabs.find(t => t.id === activeTabId);
+            const frame = document.getElementById(`frame-${activeTabId}`);
+
+            // 入力が空ならHomeに戻す
+            if (!url) {
+                tab.url = "";
+                tab.title = "Home";
+                frame.src = "home.html";
+                renderTabs();
+                return;
+            }
+
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+            tab.url = url;
+            loadBar.style.width = "40%";
+
+            try {
+                const encoded = __scramjet$config.encodeUrl(url);
+                frame.src = __scramjet$config.prefix + encoded;
+                
+                frame.onload = () => {
+                    tab.title = new URL(url).hostname;
+                    loadBar.style.width = "100%";
+                    setTimeout(() => loadBar.style.width = "0%", 400);
+                    renderTabs();
+                };
+            } catch (e) {
+                showToast("無効なURL形式です");
+                loadBar.style.width = "0%";
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') navigate(); });
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./scramjet.sw.js', { scope: '/scramjet/' });
+        }
+    </script>
+</body>
+</html>
