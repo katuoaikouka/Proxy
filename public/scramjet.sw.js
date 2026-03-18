@@ -24,16 +24,19 @@ self.addEventListener('fetch', (event) => {
                     // 自サーバーのBareエンドポイントを指定
                     const bareEndpoint = self.location.origin + '/bare/';
 
+                    // リクエストヘッダーの準備
+                    const rawHeaders = Object.fromEntries(event.request.headers);
+
                     // Bare Server経由でリクエストを送信
-                    // これによりブラウザのCORS制限をバイパスします
                     const response = await fetch(bareEndpoint, {
                         method: event.request.method,
                         headers: {
                             'x-bare-url': decodedUrl,
-                            'x-bare-headers': JSON.stringify(Object.fromEntries(event.request.headers)),
+                            'x-bare-headers': JSON.stringify(rawHeaders),
                             'x-bare-forward-headers': '[]'
                         },
-                        body: event.request.body,
+                        // GET/HEAD以外でボディがある場合は送信
+                        body: (['GET', 'HEAD'].includes(event.request.method)) ? null : await event.request.blob(),
                         redirect: 'manual'
                     });
                     
