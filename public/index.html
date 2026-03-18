@@ -210,11 +210,11 @@
         }
 
         function navigate() {
-            let url = urlInput.value.trim();
+            let input = urlInput.value.trim();
             const tab = tabs.find(t => t.id === activeTabId);
             const frame = document.getElementById(`frame-${activeTabId}`);
 
-            if (!url) {
+            if (!input) {
                 tab.url = "";
                 tab.title = "Home";
                 frame.src = "home.html";
@@ -222,27 +222,37 @@
                 return;
             }
 
-            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            // URL判定と検索エンジンの使い分け
+            let url = input;
+            if (!/^https?:\/\//i.test(url)) {
+                if (url.includes('.') && !url.includes(' ')) {
+                    url = 'https://' + url;
+                } else {
+                    url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
+                }
+            }
 
             tab.url = url;
             loadBar.style.width = "40%";
 
             try {
+                // プレフィックスを付けてエンコードされたURLへ
                 const encoded = __scramjet$config.encodeUrl(url);
                 frame.src = __scramjet$config.prefix + encoded;
                 
                 frame.onload = () => {
                     try {
-                        tab.title = new URL(url).hostname;
+                        const hostname = new URL(url).hostname;
+                        tab.title = hostname;
                     } catch(e) {
-                        tab.title = "External Site";
+                        tab.title = "Result";
                     }
                     loadBar.style.width = "100%";
                     setTimeout(() => loadBar.style.width = "0%", 400);
                     renderTabs();
                 };
             } catch (e) {
-                showToast("無効なURL形式です");
+                showToast("URLの処理に失敗しました");
                 loadBar.style.width = "0%";
             }
         }
@@ -259,10 +269,10 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./scramjet.sw.js', { 
-                    scope: '/scramjet/',
+                    scope: __scramjet$config.prefix,
                     updateViaCache: 'none' 
                 }).then(reg => {
-                    console.log('SW Registered');
+                    console.log('Proxy Worker Registered');
                     reg.update();
                 }).catch(err => console.error('SW Error:', err));
             });
