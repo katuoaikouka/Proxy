@@ -2,10 +2,7 @@ importScripts('scramjet.code.js');
 importScripts('scramjet.config.js');
 
 self.addEventListener('install', () => self.skipWaiting());
-
-self.addEventListener('activate', (event) => {
-    event.waitUntil(self.clients.claim());
-});
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
@@ -24,7 +21,7 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             (async () => {
                 try {
-                    // CodeSandboxや自前サーバーのBareエンドポイントを指定
+                    // 自サーバーのBareエンドポイントを指定
                     const bareEndpoint = self.location.origin + '/bare/';
 
                     // Bare Server経由でリクエストを送信
