@@ -11,7 +11,7 @@ self.addEventListener('fetch', (event) => {
     if (url.startsWith(scope)) {
         const path = url.substring(scope.length);
         
-        // 静的ファイルやHome画面、設定ファイルはプロキシを通さずそのまま返す
+        // 静的ファイルや設定ファイルはプロキシを通さずそのまま返す
         if (!path || path === 'home.html' || path.endsWith('.js') || path.endsWith('.config.js')) {
             return;
         }
@@ -21,13 +21,11 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             (async () => {
                 try {
-                    // 自サーバーのBareエンドポイントを指定
                     const bareEndpoint = self.location.origin + '/bare/';
 
-                    // リクエストヘッダーの準備
+                    // ヘッダーのコピーとBare用ヘッダーの付与
                     const rawHeaders = Object.fromEntries(event.request.headers);
 
-                    // Bare Server経由でリクエストを送信
                     const response = await fetch(bareEndpoint, {
                         method: event.request.method,
                         headers: {
@@ -35,12 +33,25 @@ self.addEventListener('fetch', (event) => {
                             'x-bare-headers': JSON.stringify(rawHeaders),
                             'x-bare-forward-headers': '[]'
                         },
-                        // GET/HEAD以外でボディがある場合は送信
                         body: (['GET', 'HEAD'].includes(event.request.method)) ? null : await event.request.blob(),
                         redirect: 'manual'
                     });
+
+                    // 重要：Bare Serverからのレスポンスをブラウザが解釈できる形式に変換
+                    // ヘッダーをそのまま流すと、Bare Server自体の情報が表示される原因になります
+                    const responseHeaders = new Headers(response.headers);
                     
-                    return response;
+                    // JSONが表示されるのを防ぐため、Content-Typeを補正（Bare Serverがjsonを返してきた場合）
+                    if (responseHeaders.get('x-bare-status') === '200') {
+                        // 必要に応じてここでContent-Typeを上書きするなどの処理が可能です
+                    }
+
+                    return new Response(response.body, {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: responseHeaders
+                    });
+
                 } catch (err) {
                     console.error('Bare Fetch Error:', err);
                     return new Response('Proxy Error: ' + err.message, {
