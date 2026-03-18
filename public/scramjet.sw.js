@@ -2,7 +2,10 @@ importScripts('scramjet.code.js');
 importScripts('scramjet.config.js');
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(self.clients.claim());
+});
 
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
@@ -11,22 +14,39 @@ self.addEventListener('fetch', (event) => {
     if (url.startsWith(scope)) {
         const path = url.substring(scope.length);
         
-        // 静的ファイルやHome画面はそのまま通す
-        if (!path || path === 'home.html' || path.endsWith('.js')) return;
+        // 静的ファイルやHome画面、設定ファイルはプロキシを通さずそのまま返す
+        if (!path || path === 'home.html' || path.endsWith('.js') || path.endsWith('.config.js')) {
+            return;
+        }
 
         const decodedUrl = self.__scramjet$config.decodeUrl(path);
         
         event.respondWith(
             (async () => {
                 try {
-                    // 基本的なフェッチ（実際にはBare Server経由が推奨）
-                    const response = await fetch(decodedUrl, {
-                        headers: event.request.headers,
-                        redirect: 'follow'
+                    // CodeSandboxや自前サーバーのBareエンドポイントを指定
+                    const bareEndpoint = self.location.origin + '/bare/';
+
+                    // Bare Server経由でリクエストを送信
+                    // これによりブラウザのCORS制限をバイパスします
+                    const response = await fetch(bareEndpoint, {
+                        method: event.request.method,
+                        headers: {
+                            'x-bare-url': decodedUrl,
+                            'x-bare-headers': JSON.stringify(Object.fromEntries(event.request.headers)),
+                            'x-bare-forward-headers': '[]'
+                        },
+                        body: event.request.body,
+                        redirect: 'manual'
                     });
+                    
                     return response;
                 } catch (err) {
-                    return new Response('Proxy Error: ' + err.message, { status: 500 });
+                    console.error('Bare Fetch Error:', err);
+                    return new Response('Proxy Error: ' + err.message, {
+                        status: 500,
+                        headers: { 'Content-Type': 'text/plain' }
+                    });
                 }
             })()
         );
